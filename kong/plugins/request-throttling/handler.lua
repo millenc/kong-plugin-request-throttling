@@ -8,6 +8,7 @@ local fmt = string.format
 
 local NULL_UUID = "00000000-0000-0000-0000-000000000000"
 local THROTTLING_DELAY_HEADER = "X-Throttling-Delay"
+local RETRY_AFTER_HEADER = "Retry-After"
 
 local RequestThrottlingHandler = BasePlugin:extend()
 
@@ -166,16 +167,20 @@ function RequestThrottlingHandler:access(conf)
 
   -- Calculate sleep time (time needed to meet the desired rate)
   -- If it's greater than the max wait time, the request is dropped
-  local sleep_time = next_time - current_time
+  local sleep_time = (next_time - current_time) / 1000 --seconds
   if sleep_time > 0 then
-    if sleep_time > conf.max_wait_time then
+    if sleep_time > conf.max_wait_time / 1000 then
+      if conf.max_wait_time == 0 then
+        ngx.header[RETRY_AFTER_HEADER] = sleep_time
+      end
+
       return responses.send(429, "API rate limit exceeded")
     else
       if not conf.hide_client_headers then
         ngx.header[THROTTLING_DELAY_HEADER] = sleep_time
       end
 
-      ngx.sleep(sleep_time / 1000) -- put the request to sleep
+      ngx.sleep(sleep_time) -- put the request to sleep
     end
   end
 end

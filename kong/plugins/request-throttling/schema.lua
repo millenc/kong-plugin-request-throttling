@@ -15,11 +15,14 @@ return {
   },
   self_check = function(schema, plugin_t, dao, is_update)
     -- basic validations TODO: extend?
-    if plugin_t.max_wait_time < 1 then
-      return false, Errors.schema "config.max_wait_time must be greather than 1"
+    if plugin_t.interval < 1 then
+      return false, Errors.schema "config.interval must be greather than or equal to 1"
     end
-    if plugin_t.interval < 1 or plugin_t.interval >= plugin_t.max_wait_time then
-      return false, Errors.schema "config.interval must be greather than 1 and lower than config.max_wait_time"
+    if plugin_t.max_wait_time < 0 then
+      return false, Errors.schema "config.max_wait_time must be greater than or equal to 0"
+    end
+    if plugin_t.max_wait_time > 0 and plugin_t.interval >= plugin_t.max_wait_time then
+      return false, Errors.schema "config.interval must be lower than config.max_wait_time"
     end
 
     return true
