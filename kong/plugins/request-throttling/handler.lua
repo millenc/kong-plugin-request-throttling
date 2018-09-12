@@ -171,7 +171,10 @@ function RequestThrottlingHandler:access(conf)
     if sleep_time > conf.max_wait_time then
       return responses.send(429, "API rate limit exceeded")
     else
-      ngx.header[THROTTLING_DELAY_HEADER] = sleep_time
+      if not conf.hide_client_headers then
+        ngx.header[THROTTLING_DELAY_HEADER] = sleep_time
+      end
+
       ngx.sleep(sleep_time / 1000) -- put the request to sleep
     end
   end

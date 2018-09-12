@@ -11,7 +11,7 @@ return {
     redis_password = { type = "string" },
     redis_timeout = { type = "number", default = 2000 },
     redis_database = { type = "number", default = 0 },
-    -- hide_client_headers = { type = "boolean", default = false } TODO: does it make sense to send any header indicating the applied throttling?
+    hide_client_headers = { type = "boolean", default = false }
   },
   self_check = function(schema, plugin_t, dao, is_update)
     -- basic validations TODO: extend?
