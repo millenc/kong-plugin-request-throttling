@@ -6,10 +6,13 @@ local redis = require "resty.redis"
 local ngx_log = ngx.log
 local fmt = string.format
 
+local NULL_UUID = "00000000-0000-0000-0000-000000000000"
+local THROTTLING_DELAY_HEADER = "X-Throttling-Delay"
+
 local RequestThrottlingHandler = BasePlugin:extend()
 
 RequestThrottlingHandler.PRIORITY = 901
-RequestThrottlingHandler.VERSION = "0.1.0"
+RequestThrottlingHandler.VERSION = "0.2.0"
 
 local REDIS_GET_NEXT_REQUEST_TIME_SCRIPT = [[
   local current_time = tonumber(ARGV[1])
@@ -32,7 +35,7 @@ local REDIS_GET_NEXT_REQUEST_TIME_SCRIPT = [[
   return next_time
 ]]
 
-local function get_identifier(conf)
+local function get_user_identifier(conf)
   local identifier
 
   -- Consumer is identified by ip address or authenticated_credential id
@@ -52,13 +55,50 @@ local function get_identifier(conf)
   return identifier
 end
 
-local function get_cache_key(api_id, identifier)
-  -- Get the cache key used on redis for this API/consumer combination
-  return fmt("requestthrottling:%s:%s", api_id, identifier)
+local function get_endpoint_identifiers(conf)
+  -- Returns the API id or the service and/or route IDs
+  conf = conf or {}
+
+  local api_id = conf.api_id
+
+  if api_id and api_id ~= ngx.null then
+    return nil, nil, api_id
+  end
+
+  api_id = NULL_UUID
+
+  local route_id   = conf.route_id
+  local service_id = conf.service_id
+
+  if not route_id or route_id == ngx.null then
+    route_id = NULL_UUID
+  end
+
+  if not service_id or service_id == ngx.null then
+    service_id = NULL_UUID
+  end
+
+  return service_id, route_id, api_id
 end
 
-local function get_next_request_time(conf, api_id, identifier, current_time)
-  local cache_key = get_cache_key(api_id, identifier)
+local function get_cache_key(conf)
+  -- Get the cache key used on redis for this API|Service+Route/consumer combination
+  local user_identifier = get_user_identifier(conf)
+  local service_id, route_id, api_id = get_endpoint_identifiers(conf)
+  local endpoint_identifier = ""
+
+  -- generate the endpoint identifier (use API id if set)
+  if api_id == NULL_UUID then
+    endpoint_identifier = fmt("%s:%s", service_id, route_id)
+  else
+    endpoint_identifier = api_id
+  end
+
+  return fmt("requestthrottling:%s:%s", endpoint_identifier, user_identifier)
+end
+
+local function get_next_request_time(conf, current_time)
+  local cache_key = get_cache_key(conf)
 
   local red = redis:new()
   red:set_timeout(conf.redis_timeout)
@@ -113,12 +153,8 @@ function RequestThrottlingHandler:access(conf)
 
   local current_time = math.floor(timestamp.get_utc_ms())
 
-  -- Get consumer identifier and API id. This allows us to apply different rates to multiple consumers.
-  local identifier = get_identifier(conf)
-  local api_id = ngx.ctx.api.id
-
   -- Get the time when the next request can be released
-  local next_time, err = get_next_request_time(conf, api_id, identifier, current_time)
+  local next_time, err = get_next_request_time(conf, current_time)
   if err then
     if conf.fault_tolerant then
       ngx_log(ngx.ERR, "failed to get next request time: ", tostring(err))
@@ -130,12 +166,13 @@ function RequestThrottlingHandler:access(conf)
 
   -- Calculate sleep time (time needed to meet the desired rate)
   -- If it's greater than the max wait time, the request is dropped
-  local sleep_time = (next_time - current_time) / 1000 -- seconds
-  if sleep_time > 0.001 then
+  local sleep_time = next_time - current_time
+  if sleep_time > 0 then
     if sleep_time > conf.max_wait_time then
       return responses.send(429, "API rate limit exceeded")
     else
-      ngx.sleep(sleep_time) -- put the request to sleep
+      ngx.header[THROTTLING_DELAY_HEADER] = sleep_time
+      ngx.sleep(sleep_time / 1000) -- put the request to sleep
     end
   end
 end
