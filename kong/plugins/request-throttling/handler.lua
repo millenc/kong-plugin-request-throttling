@@ -13,7 +13,7 @@ local RETRY_AFTER_HEADER = "Retry-After"
 local RequestThrottlingHandler = BasePlugin:extend()
 
 RequestThrottlingHandler.PRIORITY = 901
-RequestThrottlingHandler.VERSION = "0.2.0"
+RequestThrottlingHandler.VERSION = "0.3.0"
 
 local REDIS_GET_NEXT_REQUEST_TIME_SCRIPT = [[
 -- input parameters
