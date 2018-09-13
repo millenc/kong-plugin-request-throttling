@@ -16,24 +16,57 @@ RequestThrottlingHandler.PRIORITY = 901
 RequestThrottlingHandler.VERSION = "0.2.0"
 
 local REDIS_GET_NEXT_REQUEST_TIME_SCRIPT = [[
-  local current_time = tonumber(ARGV[1])
-  local interval = tonumber(ARGV[2])
-  local max_wait_time = tonumber(ARGV[3])
-  local next_time = current_time
+-- input parameters
+local current_time = tonumber(ARGV[1])
+local interval = tonumber(ARGV[2])
+local max_wait_time = tonumber(ARGV[3])
+local burst_size = tonumber(ARGV[4])
+local burst_refresh = tonumber(ARGV[5])
 
-  if redis.call("EXISTS", KEYS[1]) == 1 then
-    next_time = tonumber(redis.call("GET", KEYS[1]))
+-- local variables with default values
+local next_time = current_time -- time when the request can be released. by default, we assume it is inmediately
+local available_burst = burst_size -- available burst. by default, the maximum
+local available_burst_last_update_time = current_time -- time when the burst balance was calculated. by default, now
+
+-- get the current values on cache
+if redis.call("EXISTS", KEYS[1]) == 1 then
+  local cache_values = {}
+
+  for cache_value in string.gmatch(redis.call("GET", KEYS[1]), "[^:]+") do
+    table.insert(cache_values, cache_value)
   end
 
-  if next_time < current_time then
-    next_time = current_time
-  end
+  available_burst = tonumber(cache_values[1])
+  available_burst_last_update_time = tonumber(cache_values[2])
+end
 
-  if next_time - current_time <= max_wait_time then
-    redis.call('SET', KEYS[1], next_time + interval)
-  end
+-- calculate burst balance
+if current_time >= available_burst_last_update_time then
+  local ticks = math.floor((current_time - available_burst_last_update_time) / interval) --# of burst balance calculate rounds
 
-  return next_time
+  available_burst = math.min(available_burst + (ticks * burst_refresh), burst_size)
+  available_burst_last_update_time = available_burst_last_update_time + (ticks * interval)
+else -- this should not happen
+  return current_time
+end
+
+if available_burst > 0 then -- if there's burst available, the request can be released inmediately
+  next_time = current_time
+else -- if there's no burst available, calculate the needed burst balance rounds needed to generate it and add it
+  local needed_ticks = math.ceil((1 + math.abs(available_burst)) / burst_refresh)
+
+  next_time = available_burst_last_update_time + (needed_ticks * interval)
+end
+
+-- if the request goes through, reduce available burst
+if next_time - current_time <= max_wait_time then
+  available_burst = available_burst - 1
+end
+
+-- update cache with current burst values
+redis.call('SET', KEYS[1], string.format("%s:%s", available_burst, available_burst_last_update_time))
+
+return next_time
 ]]
 
 local function get_user_identifier(conf)
@@ -140,7 +173,14 @@ local function get_next_request_time(conf, current_time)
   end
 
   -- eval script on redis. This gets the value for next_time and also increments this value on the cache side atomically (on a single round-trip)
-  local next_time, err = red:eval(REDIS_GET_NEXT_REQUEST_TIME_SCRIPT, 1, cache_key, current_time, conf.interval, conf.max_wait_time)
+  local next_time, err = red:eval(REDIS_GET_NEXT_REQUEST_TIME_SCRIPT,
+                                  1,
+                                  cache_key,
+                                  current_time,
+                                  conf.interval,
+                                  conf.max_wait_time,
+                                  conf.burst_size,
+                                  conf.burst_refresh)
 
   return next_time, err
 end
