@@ -1,6 +1,7 @@
 -- Kong imports
 local BasePlugin = require "kong.plugins.base_plugin"
 local timestamp = require "kong.tools.timestamp"
+local responses = require "kong.tools.responses"
 local redis = require "resty.redis"
 
 local ngx_log = ngx.log
