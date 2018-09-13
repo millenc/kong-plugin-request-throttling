@@ -15,6 +15,8 @@ local RequestThrottlingHandler = BasePlugin:extend()
 RequestThrottlingHandler.PRIORITY = 901
 RequestThrottlingHandler.VERSION = "0.3.0"
 
+-- this is the script that gets executed by redis (atomically)
+-- handles the token bucket and calculates the request release time in a single round trip
 local REDIS_GET_NEXT_REQUEST_TIME_SCRIPT = [[
 -- input parameters
 local current_time = tonumber(ARGV[1])
@@ -206,7 +208,7 @@ function RequestThrottlingHandler:access(conf)
   end
 
   -- Calculate sleep time (time needed to meet the desired rate)
-  -- If it's greater than the max wait time, the request is dropped
+  -- If the request has to wait for a long time (longer than max_wait_time), the request is dropped
   local sleep_time = (next_time - current_time) / 1000 --seconds
   if sleep_time > 0 then
     if sleep_time > conf.max_wait_time / 1000 then
@@ -220,7 +222,7 @@ function RequestThrottlingHandler:access(conf)
         ngx.header[THROTTLING_DELAY_HEADER] = sleep_time
       end
 
-      ngx.sleep(sleep_time) -- put the request to sleep
+      ngx.sleep(sleep_time) -- put the request to sleep (apply delay)
     end
   end
 end
