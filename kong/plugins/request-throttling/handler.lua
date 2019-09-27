@@ -184,7 +184,6 @@ local function get_next_request_time(conf, current_time)
                                   conf.max_wait_time,
                                   conf.burst_size,
                                   conf.burst_refresh)
-
   return next_time, err
 end
 
@@ -204,7 +203,7 @@ function RequestThrottlingHandler:access(conf)
       kong.log.err("failed to get next request time: ", tostring(err))
       return
     else
-      return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
+      return kong.response.exit(500, "Internal Server Error")
     end
   end
 
@@ -217,7 +216,7 @@ function RequestThrottlingHandler:access(conf)
         ngx.header[RETRY_AFTER_HEADER] = sleep_time
       end
 
-      return responses.send(429, "API rate limit exceeded")
+      return kong.response.exit(429, "API rate limit exceeded")
     else
       if not conf.hide_client_headers then
         ngx.header[THROTTLING_DELAY_HEADER] = sleep_time
