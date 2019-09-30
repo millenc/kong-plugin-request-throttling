@@ -15,8 +15,8 @@ As of now, this plugin is a proof of concept and not ready for production. Use i
 
 ## Requirements
 
-* [Kong](https://konghq.com/) (0.12.x or higher)
-* [Redis](https://redis.io/) (4.0 or higher)
+* [Kong](https://konghq.com/) (>=0.12.x and <1.x)
+* [Redis](https://redis.io/) (>=4.0)
 
 ## Installation
 
