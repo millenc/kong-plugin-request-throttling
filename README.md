@@ -50,11 +50,11 @@ For example, suppose we have a service that can only handle 1 request every 5 se
 * `config.burst_refresh = 1`
 * `config.max_wait_time = 10000`
 
-With this configuration, we have a bucket of capacity `1` (`config.burst_size = 1`), where `1` new token is generated (`config.burst_refresh = 1`) every `5000` milliseconds (`config.interval = 5000`). This means that, if we send 4 requests at `t=0`, the plugin will:
+With this configuration, we have a bucket of capacity `1` (`config.burst_size = 1`), where `1` new token is generated (`config.burst_refresh = 1`) every `5000` milliseconds (`config.interval = 5000`). This means that, if we send 4 requests at `t=0ms`, the plugin will:
 
 * Send the first request inmediately to the upstream (no throttling applied). This consumes the only token available in the bucket.
-* Make the second request wait for 5 seconds and send it to the upstream at `t=5`. When the request arrives there are no tokens available (it's been consumed by the first request) and it must wait until a new one is generated (after `5000`ms).
-* Make the third request wait for 10 seconds and send it to the upstream at `t=10`. When the request arrives there are no tokens available. The only one available in the bucket was consumed by the first request and the next one is "reserved" by the second request (it will be generated and consumed at `t=5`), so the request must wait until the next token is generated, after `10000`ms (`5000`ms to generate the token reserved by the second request and another `5000`ms to generate the one needed by this request).
+* Make the second request wait for 5 seconds and send it to the upstream at `t=5000ms`. When the request arrives there are no tokens available (it's been consumed by the first request) and it must wait until a new one is generated (after `5000`ms).
+* Make the third request wait for 10 seconds and send it to the upstream at `t=10000ms`. When the request arrives there are no tokens available. The only one available in the bucket was consumed by the first request and the next one is "reserved" by the second request (it will be generated and consumed at `t=5000ms`), so the request must wait until the next token is generated, after `10000`ms (`5000`ms to generate the token reserved by the second request and another `5000`ms to generate the one needed by this request).
 * Drop the fourth request (with `429 - Too Many Requests` HTTP code), since its wait time (`15000`ms) would be higher than the allowed maximum (`config.max_wait_time = 10000`).
 
 ## Authors
