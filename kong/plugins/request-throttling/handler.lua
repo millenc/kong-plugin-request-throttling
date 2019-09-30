@@ -1,7 +1,7 @@
 -- Kong imports
 local BasePlugin = require "kong.plugins.base_plugin"
 local timestamp = require "kong.tools.timestamp"
-local responses = require "kong.tools.responses"
+local responses = kong.response
 local redis = require "resty.redis"
 
 local ngx_log = ngx.log
@@ -141,20 +141,20 @@ local function get_next_request_time(conf, current_time)
   red:set_timeout(conf.redis_timeout)
   local ok, err = red:connect(conf.redis_host, conf.redis_port)
   if not ok then
-    ngx_log(ngx.ERR, "failed to connect to Redis: ", err)
+    kong.log.err("failed to connect to Redis: ", err)
     return nil, err
   end
 
   local times, err = red:get_reused_times()
   if err then
-    ngx_log(ngx.ERR, "failed to get connect reused times: ", err)
+    kong.log.err("failed to get connect reused times: ", err)
     return nil, err
   end
 
   if times == 0 and conf.redis_password and conf.redis_password ~= "" then
     local ok, err = red:auth(conf.redis_password)
     if not ok then
-      ngx_log(ngx.ERR, "failed to auth Redis: ", err)
+      kong.log.err("failed to auth Redis: ", err)
       return nil, err
     end
   end
@@ -170,7 +170,7 @@ local function get_next_request_time(conf, current_time)
 
     local ok, err = red:select(conf.redis_database or 0)
     if not ok then
-      ngx_log(ngx.ERR, "failed to change Redis database: ", err)
+      kong.log.err("failed to change Redis database: ", err)
       return nil, err
     end
   end
@@ -184,7 +184,6 @@ local function get_next_request_time(conf, current_time)
                                   conf.max_wait_time,
                                   conf.burst_size,
                                   conf.burst_refresh)
-
   return next_time, err
 end
 
@@ -201,10 +200,10 @@ function RequestThrottlingHandler:access(conf)
   local next_time, err = get_next_request_time(conf, current_time)
   if err then
     if conf.fault_tolerant then
-      ngx_log(ngx.ERR, "failed to get next request time: ", tostring(err))
+      kong.log.err("failed to get next request time: ", tostring(err))
       return
     else
-      return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
+      return kong.response.exit(500, "Internal Server Error")
     end
   end
 
@@ -217,7 +216,7 @@ function RequestThrottlingHandler:access(conf)
         ngx.header[RETRY_AFTER_HEADER] = sleep_time
       end
 
-      return responses.send(429, "API rate limit exceeded")
+      return kong.response.exit(429, "API rate limit exceeded")
     else
       if not conf.hide_client_headers then
         ngx.header[THROTTLING_DELAY_HEADER] = sleep_time
